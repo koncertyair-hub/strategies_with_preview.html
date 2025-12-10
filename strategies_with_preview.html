@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="pl">
+    <link rel="icon" href="https://ptcpt_.ct8.pl/favicon1.jpg" type="image/jpg">
+<head>
+<body style="background-color: cadetblue;">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Strategie: DEMA/MACD/RSI/Fractal — Generator sygnałów + Spreadsheet</title>
+<style>
+  :root{ --bg:#f7f9fc; --card:orange; --muted:#6b7280; --accent:#1155cc; --border:#e6eef8 }
+  body{font-family:Inter,Segoe UI,Arial,sans-serif;background:var(--bg);color:#0b1220;margin:0;padding:20px;}
+  .container{max-width:1200px;margin:0 auto;}
+  h1{margin:0 0 6px 0;font-size:20px;}
+  p.lead{margin:0 0 16px 0;color:var(--muted);}
+  .grid{display:grid;grid-template-columns:1fr 420px;gap:18px;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px;box-shadow:0 1px 0 rgba(16,24,40,0.03);}
+  .section-title{font-weight:700;margin-bottom:8px;}
+  .fields{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;}
+  select,input[type="text"]{padding:8px;border-radius:6px;border:1px solid #dfe8f2;font-size:14px;}
+  button{background:var(--accent);color:#fff;border:none;padding:8px 10px;border-radius:6px;cursor:pointer;}
+  button.ghost{background:#fff;color:var(--accent);border:1px solid var(--accent);}
+  pre{background:#0f1724;color:#dbeafe;padding:10px;border-radius:6px;overflow:auto;font-size:13px;}
+  table{border-collapse:collapse;width:100%;font-size:13px;}
+  table th, table td{border:1px solid #eef4fb;padding:6px;text-align:center;}
+  .muted{color:var(--muted);font-size:13px;}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+  .spreadsheet{width:100%;height:280px;border:1px solid #dfe8f2;border-radius:6px;overflow:auto;background:#fff;padding:8px;}
+  .iframe-preview{width:100%;height:320px;border:1px solid #dfe8f2;border-radius:6px;}
+  .small{font-size:13px;color:var(--muted);}
+  .signal-true{color:green;font-weight:700}
+  .signal-false{color:#a0a0a0}
+  footer{margin-top:16px;color:var(--muted);font-size:13px;}
+</style>
+</head>
+<body>
+  <div class="container">
+    <h1>Strategie: DEMA (100/50/20) • Williams Fractal • MACD • RSI — Generator sygnałów</h1>
+    <p class="lead">Wbudowane przykładowe dane świec + obliczenia wskaźników, generowanie sygnałów, eksport (JSON/CSV/Pine Script) oraz prosty arkusz i integracja z Google Sheets (iframe).</p>
+
+    <div class="grid">
+      <!-- Left: main tools -->
+      <div>
+        <div class="card">
+          <div class="section-title">Dane świec (sample) + parametry</div>
+          <div class="muted small">Załadowane sample OHLC co 1 dzień. Możesz edytować sample w arkuszu poniżej i kliknąć "Przelicz sygnały".</div>
+
+          <div style="margin-top:10px" class="fields">
+            <label class="small">DEMA Long<input id="demaLong" type="text" value="100" style="width:80px;margin-left:6px"></label>
+            <label class="small">DEMA Mid<input id="demaMid" type="text" value="50" style="width:80px;margin-left:6px"></label>
+            <label class="small">DEMA Short<input id="demaShort" type="text" value="20" style="width:80px;margin-left:6px"></label>
+            <label class="small">RSI period<input id="rsiPeriod" type="text" value="14" style="width:80px;margin-left:6px"></label>
+          </div>
+
+          <div class="controls">
+            <button id="recalcBtn">Przelicz sygnały</button>
+            <button id="downloadCsvBtn" class="ghost">Pobierz CSV (wyniki)</button>
+            <button id="downloadJsonBtn" class="ghost">Pobierz JSON (wyniki)</button>
+            <button id="downloadPineBtn">Eksportuj Pine Script</button>
+            <button id="copyJsonBtn" class="ghost">Kopiuj JSON</button>
+          </div>
+
+          <div style="margin-top:12px">
+            <div class="section-title">Tabela świec + wskaźniki</div>
+            <div style="max-height:420px;overflow:auto">
+              <table id="dataTable">
+                <thead>
+                  <tr>
+                    <th>Date</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Volume</th>
+                    <th>DEMA100</th><th>DEMA50</th><th>DEMA20</th><th>MACD</th><th>MACD_signal</th><th>RSI</th><th>Fractal_up</th><th>Fractal_down</th><th>Signal</th>
+                  </tr>
+                </thead>
+                <tbody id="dataBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="card" style="margin-top:14px">
+          <div class="section-title">Arkusz kalkulacyjny (edytowalny)</div>
+          <div class="small">Edytuj dane świec ręcznie lub wklej z zewnętrznego źródła. Kolumny: date,open,high,low,close,volume</div>
+
+          <div style="margin-top:8px" class="spreadsheet" id="sheetContainer" contenteditable="false">
+            <!-- simple editable table will be programmatically built here -->
+          </div>
+
+          <div class="controls" style="margin-top:8px">
+            <button id="toggleEditBtn" class="ghost">Edytuj arkusz</button>
+            <button id="loadFromSheetBtn">Załaduj z arkusza</button>
+            <button id="exportCsvSheetBtn">Pobierz CSV (arkusz)</button>
+            <button id="copyCsvSheetBtn" class="ghost">Kopiuj CSV (arkusz)</button>
+          </div>
+
+          <div style="margin-top:8px" class="small">
+            <strong>Uwaga:</strong> Aby zaimportować do Google Sheets: pobierz CSV i użyj Plik → Import → Prześlij. Możesz też wkleić skopiowany CSV bezpośrednio do arkusza.
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right: preview and extras -->
+      <div>
+        <div class="card">
+          <div class="section-title">Podgląd / Filtry / Statystyka</div>
+          <div id="summary" class="small muted">Brak przeliczeń. Kliknij "Przelicz sygnały".</div>
+          <div style="margin-top:8px">
+            <label class="small">Filtr sygnałów:
+              <select id="signalFilter">
+                <option value="all">Wszystkie</option>
+                <option value="buy">Buy</option>
+                <option value="sell">Sell</option>
+                <option value="none">Brak sygnału</option>
+              </select>
+            </label>
+            <button id="applyFilterBtn" class="ghost">Zastosuj filtr</button>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:12px">
+          <div class="section-title">Google Sheets — iframe</div>
+          <div class="small">Wklej publiczny URL arkusza Google aby zobaczyć go w iframe (arkusz musi być ustawiony jako "Udostępniony publicznie").</div>
+          <div style="margin-top:6px" class="fields">
+            <input id="gsUrl" type="text" placeholder="Wklej publiczny URL Google Sheets lub pozostaw puste">
+            <button id="loadGsBtn" class="ghost">Załaduj w iframe</button>
+          </div>
+          <iframe id="gsIframe" class="iframe-preview" srcdoc="<p class='small muted' style='padding:12px'>Brak załadowanego Google Sheets. Wklej publiczny URL i kliknij 'Załaduj'.</p>"></iframe>
+          <div style="margin-top:8px" class="small">
+            Aby zaimportować dane do Google Sheets z tego narzędzia: pobierz CSV (arkusz), otwórz Google Sheets → Plik → Import → Prześlij. Lub skopiuj zawartość i wklej bezpośrednio.
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:12px">
+          <div class="section-title">GitHub Pages — krótkie instrukcje</div>
+          <ol class="small">
+            <li>Utwórz repo na GitHub (publiczne).</li>
+            <li>Dodaj plik HTML (np. strategies_with_preview.html) do repo i commit/push.</li>
+            <li>Wejdź do Settings → Pages → wybierz branch (main) i folder (root), zapisz.</li>
+            <li>Po kilku sekundach strona będzie dostępna pod: <code>https://{user}.github.io/{repo}/strategies_with_preview.html</code></li>
+          </ol>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      <div class="small">Plik wygenerowany lokalnie — nie wysyła nic do serwera. Przy eksporcie do Google Sheets wymagany jest ręczny import lub udostępnienie arkusza.</div>
+    </footer>
+  </div>
+
+<script>
+/* ---------------------------
+   Sample OHLC data (daily)
+   Each item: {date: 'YYYY-MM-DD', open, high, low, close, volume}
+   --------------------------- */
+const sampleData = [
+  {date:'2025-11-01',open:100,high:105,low:98,close:102,volume:1200},
+  {date:'2025-11-02',open:102,high:106,low:101,close:105,volume:1500},
+  {date:'2025-11-03',open:105,high:108,low:104,close:107,volume:1100},
+  {date:'2025-11-04',open:107,high:110,low:106,close:109,volume:1300},
+  {date:'2025-11-05',open:109,high:112,low:108,close:111,volume:1250},
+  {date:'2025-11-06',open:111,high:113,low:110,close:112,volume:1400},
+  {date:'2025-11-07',open:112,high:115,low:110,close:114,volume:1700},
+  {date:'2025-11-08',open:114,high:116,low:112,close:113,volume:1600},
+  {date:'2025-11-09',open:113,high:114,low:109,close:110,volume:1550},
+  {date:'2025-11-10',open:110,high:112,low:108,close:111,volume:1300},
+  {date:'2025-11-11',open:111,high:115,low:110,close:114,volume:1450},
+  {date:'2025-11-12',open:114,high:118,low:113,close:117,volume:1800},
+  {date:'2025-11-13',open:117,high:119,low:116,close:118,volume:1750},
+  {date:'2025-11-14',open:118,high:121,low:117,close:120,volume:1900},
+  {date:'2025-11-15',open:120,high:123,low:119,close:122,volume:2100},
+  {date:'2025-11-16',open:122,high:125,low:121,close:124,volume:2000},
+  {date:'2025-11-17',open:124,high:126,low:123,close:125,volume:1950},
+  {date:'2025-11-18',open:125,high:128,low:124,close:127,volume:2050},
+  {date:'2025-11-19',open:127,high:130,low:125,close:129,volume:2250},
+  {date:'2025-11-20',open:129,high:132,low:128,close:131,volume:2400},
+];
+
+/* ---------------------------
+   Indicator helpers
+   - EMA
+   - DEMA = 2*EMA - EMA(EMA)
+   - MACD
+   - RSI
+   - Williams Fractal (5 candle pattern)
+   --------------------------- */
+function ema(series, period){
+  const k = 2 / (period + 1);
+  const out = [];
+  let prev;
+  for(let i=0;i<series.length;i++){
+    const val = series[i];
+    if(i===0){
+      prev = val; // seed with first value
+      out.push(prev);
+    } else {
+      prev = val * k + prev * (1 - k);
+      out.push(prev);
+    }
+  }
+  return out;
+}
+
+function dema(series, period){
+  const ema1 = ema(series, period);
+  const ema2 = ema(ema1, period);
+  return ema1.map((v,i) => 2*v - ema2[i]);
+}
+
+function macd(series, fast=12, slow=26, signal=9){
+  const emaFast = ema(series, fast);
+  const emaSlow = ema(series, slow);
+  const macdLine = emaFast.map((v,i) => v - emaSlow[i]);
+  const signalLine = ema(macdLine, signal);
+  const hist = macdLine.map((v,i) => v - signalLine[i]);
+  return {macdLine, signalLine, hist};
+}
+
+function rsi(series, period=14){
+  const out = [];
+  let gains = 0, losses = 0;
+  for(let i=0;i<series.length;i++){
+    if(i===0){ out.push(null); continue; }
+    const change = series[i] - series[i-1];
+    gains += Math.max(0, change);
+    losses += Math.max(0, -change);
+    if(i === period){
+      // initial average
+      let avgGain = gains / period;
+      let avgLoss = losses / period;
+      let rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+      out[i] = 100 - (100 / (1 + rs));
+      // continue with smoothed
+      let prevAvgGain = avgGain;
+      let prevAvgLoss = avgLoss;
+      for(let j=i+1;j<series.length;j++){
+        const ch = series[j] - series[j-1];
+        const g = Math.max(0,ch);
+        const l = Math.max(0,-ch);
+        prevAvgGain = (prevAvgGain * (period - 1) + g) / period;
+        prevAvgLoss = (prevAvgLoss * (period - 1) + l) / period;
+        const r = prevAvgLoss === 0 ? 100 : prevAvgGain / prevAvgLoss;
+        out[j] = 100 - (100 / (1 + r));
+      }
+      break;
+    } else {
+      out.push(null);
+    }
+  }
+  // fill earlier nulls
+  for(let i=0;i<out.length;i++) if(out[i]===undefined) out[i]=null;
+  return out;
+}
+
+function williamsFractalHighs(data){
+  // returns boolean array indicating fractal up (local high) at index i (center of 5)
+  const up = new Array(data.length).fill(false);
+  const down = new Array(data.length).fill(false);
+  for(let i=2;i<data.length-2;i++){
+    const c = data[i];
+    const highs = [data[i-2].high, data[i-1].high, data[i+1].high, data[i+2].high];
+    const lows  = [data[i-2].low, data[i-1].low, data[i+1].low, data[i+2].low];
+    if(c.high > Math.max(...highs)) up[i] = true;
+    if(c.low < Math.min(...lows)) down[i] = true;
+  }
+  return {up, down};
+}
+
+/* ---------------------------
+   Build UI: spreadsheet and table
+   --------------------------- */
+const sheetContainer = document.getElementById('sheetContainer');
+const dataBody = document.getElementById('dataBody');
+let currentData = JSON.parse(JSON.stringify(sampleData)); // copy
+
+function buildSheetFromData(data){
+  // create editable HTML table inside sheetContainer (simple)
+  let html = '<table id="sheetTable" style="width:100%"><thead><tr><th>date</th><th>open</th><th>high</th><th>low</th><th>close</th><th>volume</th></tr></thead><tbody>';
+  for(const r of data){
+    html += `<tr>
+      <td contenteditable="true">${r.date}</td>
+      <td contenteditable="true">${r.open}</td>
+      <td contenteditable="true">${r.high}</td>
+      <td contenteditable="true">${r.low}</td>
+      <td contenteditable="true">${r.close}</td>
+      <td contenteditable="true">${r.volume}</td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  sheetContainer.innerHTML = html;
+  sheetContainer.contentEditable = false;
+}
+
+function readSheetToData(){
+  const table = document.getElementById('sheetTable');
+  const rows = Array.from(table.querySelectorAll('tbody tr'));
+  const out = rows.map(tr=>{
+    const cells = tr.querySelectorAll('td');
+    return {
+      date: cells[0].innerText.trim(),
+      open: parseFloat(cells[1].innerText)||0,
+      high: parseFloat(cells[2].innerText)||0,
+      low: parseFloat(cells[3].innerText)||0,
+      close: parseFloat(cells[4].innerText)||0,
+      volume: parseFloat(cells[5].innerText)||0
+    };
+  });
+  return out;
+}
+
+function renderDataTable(data, indicators){
+  dataBody.innerHTML = '';
+  for(let i=0;i<data.length;i++){
+    const d = data[i];
+    const tr = document.createElement('tr');
+    const det = indicators ? indicators : {};
+    const dema100 = det.dema100 ? (det.dema100[i]!==undefined?num(det.dema100[i]):'') : '';
+    const dema50  = det.dema50 ? (det.dema50[i]!==undefined?num(det.dema50[i]):'') : '';
+    const dema20  = det.dema20 ? (det.dema20[i]!==undefined?num(det.dema20[i]):'') : '';
+    const macdval = det.macdLine ? (det.macdLine[i]!==undefined?num(det.macdLine[i]):'') : '';
+    const macsig  = det.macdSignal ? (det.macdSignal[i]!==undefined?num(det.macdSignal[i]):'') : '';
+    const rsival  = det.rsi ? (det.rsi[i]!==undefined?num(det.rsi[i]):'') : '';
+    const fractUp = det.frUp && det.frUp[i] ? '▲' : '';
+    const fractDn = det.frDn && det.frDn[i] ? '▼' : '';
+    const signal  = det.signals ? (det.signals[i]||'') : '';
+    tr.innerHTML = `<td>${d.date}</td><td>${d.open}</td><td>${d.high}</td><td>${d.low}</td><td>${d.close}</td><td>${d.volume}</td>
+      <td>${dema100}</td><td>${dema50}</td><td>${dema20}</td><td>${macdval}</td><td>${macsig}</td><td>${rsival}</td><td>${fractUp}</td><td>${fractDn}</td><td>${signal}</td>`;
+    dataBody.appendChild(tr);
+  }
+}
+
+function num(x){ return (x===null||x===undefined)?'':(Math.round(x*1000)/1000); }
+
+/* ---------------------------
+   Core: compute indicators & signals
+   --------------------------- */
+function computeAll(data){
+  const closeSeries = data.map(d=>d.close);
+  const demaLongP = parseInt(document.getElementById('demaLong').value,10) || 100;
+  const demaMidP  = parseInt(document.getElementById('demaMid').value,10) || 50;
+  const demaShortP= parseInt(document.getElementById('demaShort').value,10) || 20;
+  const rsiP = parseInt(document.getElementById('rsiPeriod').value,10) || 14;
+
+  const dema100arr = dema(closeSeries, demaLongP);
+  const dema50arr  = dema(closeSeries, demaMidP);
+  const dema20arr  = dema(closeSeries, demaShortP);
+
+  const macdRes = macd(closeSeries, 12, 26, 9);
+  const rsiArr = rsi(closeSeries, rsiP);
+
+  const fract = williamsFractalHighs(data);
+
+  // Build signals: very basic rule set:
+  // BUY if: demaShort crosses above demaMid and demaMid above demaLong AND MACD crosses above signal OR RSI < 30 (rebound) OR fractal down (local low)
+  // SELL if: demaShort crosses below demaMid and MACD crosses below signal OR RSI > 70 OR fractal up
+  const signals = new Array(data.length).fill('');
+  for(let i=1;i<data.length;i++){
+    const buyCond = (dema20arr[i] > dema50arr[i] && dema20arr[i-1] <= dema50arr[i-1]) && (macdRes.macdLine[i] > macdRes.signalLine[i]);
+    const sellCond = (dema20arr[i] < dema50arr[i] && dema20arr[i-1] >= dema50arr[i-1]) && (macdRes.macdLine[i] < macdRes.signalLine[i]);
+    // additional conditions
+    if(rsiArr[i] !== null && rsiArr[i] < 30) buyCond = true;
+    if(rsiArr[i] !== null && rsiArr[i] > 70) sellCond = true;
+    if(fract.down[i]) buyCond = true;
+    if(fract.up[i]) sellCond = true;
+
+    if(buyCond) signals[i] = 'BUY';
+    else if(sellCond) signals[i] = 'SELL';
+    else signals[i] = '';
+  }
+
+  return {
+    dema100: dema100arr,
+    dema50: dema50arr,
+    dema20: dema20arr,
+    macdLine: macdRes.macdLine,
+    macdSignal: macdRes.signalLine,
+    macdHist: macdRes.hist,
+    rsi: rsiArr,
+    frUp: fract.up,
+    frDn: fract.down,
+    signals
+  };
+}
+
+/* ---------------------------
+   UI events for compute / export
+   --------------------------- */
+document.getElementById('recalcBtn').addEventListener('click', ()=>{
+  currentData = readSheetToData();
+  const ind = computeAll(currentData);
+  renderDataTable(currentData, ind);
+  const stats = buildSummary(ind);
+  document.getElementById('summary').innerHTML = stats;
+});
+
+function buildSummary(ind){
+  const buys = ind.signals.filter(s=>s==='BUY').length;
+  const sells = ind.signals.filter(s=>s==='SELL').length;
+  return `<div><strong>Statystyka:</strong> BUY: ${buys}, SELL: ${sells}. Ostatni sygnał: ${ind.signals[ind.signals.length-1]||'Brak'}</div>`;
+}
+
+// CSV/JSON export of results
+function buildResultsPayload(data, ind){
+  const rows = data.map((d,i)=>({
+    date: d.date, open:d.open, high:d.high, low:d.low, close:d.close, volume:d.volume,
+    dema100: ind.dema100[i]||null, dema50: ind.dema50[i]||null, dema20: ind.dema20[i]||null,
+    macd: ind.macdLine[i]||null, macd_signal: ind.macdSignal[i]||null, rsi: ind.rsi[i]||null,
+    fractUp: !!ind.frUp[i], fractDown: !!ind.frDn[i],
+    signal: ind.signals[i]||''
+  }));
+  return rows;
+}
+
+document.getElementById('downloadCsvBtn').addEventListener('click', ()=>{
+  const ind = computeAll(currentData);
+  const rows = buildResultsPayload(currentData, ind);
+  const csv = toCSV(rows);
+  downloadFile(csv, 'results.csv', 'text/csv');
+});
+
+document.getElementById('downloadJsonBtn').addEventListener('click', ()=>{
+  const ind = computeAll(currentData);
+  const rows = buildResultsPayload(currentData, ind);
+  downloadFile(JSON.stringify(rows, null, 2), 'results.json', 'application/json');
+});
+
+document.getElementById('copyJsonBtn').addEventListener('click', async ()=>{
+  const ind = computeAll(currentData);
+  const rows = buildResultsPayload(currentData, ind);
+  try{
+    await navigator.clipboard.writeText(JSON.stringify(rows,null,2));
+    document.getElementById('copyJsonBtn').textContent = 'Skopiowano!';
+    setTimeout(()=>document.getElementById('copyJsonBtn').textContent='Kopiuj JSON',1200);
+  }catch(e){
+    alert('Kopiowanie nie powiodło się — skopiuj ręcznie.');
+  }
+});
+
+/* ---------------------------
+   Pine Script export (basic)
+   --------------------------- */
+function generatePineScript(indicatorPeriods = {short:20,mid:50,long:100}){
+  // simple Pine v5 snippet that computes DEMA, MACD, RSI and plots basic buy/sell signals
+  const s = `//@version=5
+indicator("DEMA/MACD/RSI Signals (generated)", overlay=true)
+src = close
+demaShort = ta.dema(src, ${indicatorPeriods.short})
+demaMid   = ta.dema(src, ${indicatorPeriods.mid})
+demaLong  = ta.dema(src, ${indicatorPeriods.long})
+macdLine = ta.macd(src, 12, 26, 9)
+rsiVal   = ta.rsi(src, 14)
+
+// signals (simple)
+buy = ta.crossover(demaShort, demaMid) and macdLine.macd > macdLine.signal
+sell = ta.crossunder(demaShort, demaMid) and macdLine.macd < macdLine.signal
+
+plot(demaShort, color=color.orange)
+plot(demaMid, color=color.yellow)
+plot(demaLong, color=color.blue)
+plotshape(buy, title="Buy", text="BUY", style=shape.labelup, location=location.belowbar, color=color.green, textcolor=color.white)
+plotshape(sell, title="Sell", text="SELL", style=shape.labeldown, location=location.abovebar, color=color.red, textcolor=color.white)`;
+
+  return s;
+}
+
+document.getElementById('downloadPineBtn').addEventListener('click', ()=>{
+  const pine = generatePineScript({short:parseInt(document.getElementById('demaShort').value,10)||20, mid:parseInt(document.getElementById('demaMid').value,10)||50, long:parseInt(document.getElementById('demaLong').value,10)||100});
+  downloadFile(pine, 'strategy_pine_v5.pine', 'text/plain');
+});
+
+/* ---------------------------
+   CSV helpers
+   --------------------------- */
+function toCSV(arr){
+  if(!arr.length) return '';
+  const keys = Object.keys(arr[0]);
+  const lines = [keys.join(',')];
+  for(const r of arr){
+    const row = keys.map(k=>{
+      const val = r[k]===null || r[k]===undefined ? '' : String(r[k]);
+      if(val.includes(',')||val.includes('"')||val.includes('\n')) return `"${val.replace(/"/g,'""')}"`;
+      return val;
+    });
+    lines.push(row.join(','));
+  }
+  return lines.join('\n');
+}
+
+function downloadFile(content, filename, type){
+  const blob = new Blob([content], {type});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/* ---------------------------
+   Spreadsheet controls
+   --------------------------- */
+document.getElementById('toggleEditBtn').addEventListener('click', ()=>{
+  const editable = sheetContainer.contentEditable === 'true';
+  sheetContainer.contentEditable = editable ? 'false' : 'true';
+  document.getElementById('toggleEditBtn').textContent = editable ? 'Edytuj arkusz' : 'Wyłącz edycję arkusza';
+});
+
+document.getElementById('loadFromSheetBtn').addEventListener('click', ()=>{
+  try{
+    const data = readSheetToData();
+    currentData = data;
+    const ind = computeAll(currentData);
+    renderDataTable(currentData, ind);
+    document.getElementById('summary').innerHTML = buildSummary(ind);
+  }catch(e){
+    alert('Błąd podczas odczytu arkusza.');
+  }
+});
+
+document.getElementById('exportCsvSheetBtn').addEventListener('click', ()=>{
+  const data = readSheetToData();
+  const csv = toCSV(data.map(r=>({
+    date:r.date,open:r.open,high:r.high,low:r.low,close:r.close,volume:r.volume
+  })));
+  downloadFile(csv,'sheet_export.csv','text/csv');
+});
+
+document.getElementById('copyCsvSheetBtn').addEventListener('click', async ()=>{
+  const data = readSheetToData();
+  const csv = toCSV(data.map(r=>({
+    date:r.date,open:r.open,high:r.high,low:r.low,close:r.close,volume:r.volume
+  })));
+  try{
+    await navigator.clipboard.writeText(csv);
+    document.getElementById('copyCsvSheetBtn').textContent = 'Skopiowano!';
+    setTimeout(()=>document.getElementById('copyCsvSheetBtn').textContent='Kopiuj CSV (arkusz)',1200);
+  }catch(e){
+    alert('Kopiowanie nie powiodło się.');
+  }
+});
+
+/* ---------------------------
+   Google Sheets iframe loader
+   --------------------------- */
+document.getElementById('loadGsBtn').addEventListener('click', ()=>{
+  const url = document.getElementById('gsUrl').value.trim();
+  const iframe = document.getElementById('gsIframe');
+  if(!url){ iframe.srcdoc = "<p class='small muted' style='padding:12px'>Brak URL.</p>"; return; }
+  // If user pasted a standard google sheets URL, convert to embeddable if possible
+  // Public shared sheet can be embedded via /pubhtml?gid=0&single=true
+  let embed = url;
+  if(url.includes('/edit')){
+    embed = url.replace('/edit','/pubhtml') + (url.includes('pubhtml')? '':'?gid=0&single=true');
+  }
+  iframe.src = embed;
+});
+
+/* ---------------------------
+   Signal filter
+   --------------------------- */
+document.getElementById('applyFilterBtn').addEventListener('click', ()=>{
+  const sel = document.getElementById('signalFilter').value;
+  const rows = Array.from(dataBody.querySelectorAll('tr'));
+  rows.forEach(tr=>{
+    const sig = tr.cells[14].innerText.trim();
+    if(sel === 'all') tr.style.display='';
+    else if(sel === 'none') tr.style.display = sig==='' ? '' : 'none';
+    else tr.style.display = (sig === sel.toUpperCase()) ? '' : 'none';
+  });
+});
+
+/* ---------------------------
+   Init: build sheet and table from sample
+   --------------------------- */
+buildSheetFromData(currentData);
+renderDataTable(currentData, null);
+
+/* ---------------------------
+   Utility: initial compute for UI convenience
+   --------------------------- */
+(function initialCompute(){
+  const ind = computeAll(currentData);
+  renderDataTable(currentData, ind);
+  document.getElementById('summary').innerHTML = buildSummary(ind);
+})();
+
+</script>
+</body>
+</html>
+
